@@ -22,18 +22,15 @@ module.exports.getWeeklyTeachingSchedule = async (req, res) => {
 };
 
 // GET /api/lecturer/slots/upcoming
-// Các buổi dạy sắp tới theo ScheduleSlot (đã gắn ngày, phòng, lớp)
+// Lấy TẤT CẢ lịch dạy của giáo viên (quá khứ, hiện tại, tương lai)
+// Frontend sẽ tự xử lý hiển thị status dựa trên thời gian
 module.exports.getUpcomingTeachingSlots = async (req, res) => {
   try {
     const teacherId = req.userId;
-    const now = new Date();
 
-    const slots = await ScheduleSlot.find({
-      teacherId,
-      date: { $gte: now },
-    })
+    // Lấy tất cả slots của giáo viên, không filter theo ngày
+    const slots = await ScheduleSlot.find({ teacherId })
       .sort({ date: 1, startTime: 1 })
-      .limit(20)
       .populate("subjectId")
       .populate("classId")
       .populate("roomId")
