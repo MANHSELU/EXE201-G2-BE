@@ -1,0 +1,22 @@
+# Render Blueprint for Smart Attendance Backend
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: smart-attendance-api
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: MONGO_URI
+        sync: false  # Set manually in Render dashboard
+      - key: JWT_SECRET
+        sync: false  # Set manually in Render dashboard
+      - key: FRONTEND_URL
+        sync: false  # Set manually in Render dashboard
