@@ -21,7 +21,6 @@ module.exports.getWeeklyLearningSchedule = async (req, res) => {
 
     return res.json({ data: schedules });
   } catch (err) {
-    console.error(err);
     return res.status(500).json({ message: "Internal server error" });
   }
 };
@@ -47,7 +46,6 @@ module.exports.getUpcomingLearningSlots = async (req, res) => {
 
     return res.json({ data: slots });
   } catch (err) {
-    console.error(err);
     return res.status(500).json({ message: "Internal server error" });
   }
 };

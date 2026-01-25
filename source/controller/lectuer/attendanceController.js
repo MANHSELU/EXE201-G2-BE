@@ -43,7 +43,7 @@ module.exports.createAttendanceSession = async (req, res) => {
     const expireTime = new Date(now.getTime() + 2 * 60 * 1000); // +2 phút
 
     const existingSession = await AttendanceSession.findOne({ slotId, teacherId });
-    
+
     let session;
     if (existingSession) {
       // Update mã mới nếu đã tồn tại
@@ -70,45 +70,6 @@ module.exports.createAttendanceSession = async (req, res) => {
       },
     });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ message: "Internal server error" });
-  }
-};
-
-// PATCH /api/lecturer/attendance/session/code
-// Cập nhật mã QR (chỉ đổi mã)
-// body: { attendanceSessionId }
-module.exports.updateAttendanceCode = async (req, res) => {
-  try {
-    const { attendanceSessionId } = req.body;
-    const teacherId = req.userId;
-
-    if (!attendanceSessionId) {
-      return res.status(400).json({ message: "Missing required fields" });
-    }
-
-    const session = await AttendanceSession.findById(attendanceSessionId);
-    if (!session) {
-      return res.status(404).json({ message: "Session not found" });
-    }
-
-    if (String(session.teacherId) !== String(teacherId)) {
-      return res.status(403).json({ message: "Bạn không có quyền cập nhật mã cho phiên này" });
-    }
-
-    const rawCode = generateRandomCode(6);
-    session.codeHash = hashCode(rawCode);
-    await session.save();
-
-    return res.status(200).json({
-      data: {
-        attendanceSessionId: session._id,
-        slotId: session.slotId,
-        code: rawCode,
-      },
-    });
-  } catch (err) {
-    console.error(err);
     return res.status(500).json({ message: "Internal server error" });
   }
 };
