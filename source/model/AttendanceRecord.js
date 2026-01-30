@@ -20,7 +20,7 @@ const attendanceRecordSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["PRESENT", "ABSENT", "LATE"],
+      enum: ["PRESENT", "ABSENT", "LATE", "INVALID_LOCATION"],
       required: true,
     },
     faceImageUrl: {
@@ -32,6 +32,17 @@ const attendanceRecordSchema = new mongoose.Schema(
     checkinTime: {
       type: Date,
       default: Date.now,
+    },
+    // Vị trí khi điểm danh
+    locationLat: {
+      type: Number,
+    },
+    locationLng: {
+      type: Number,
+    },
+    // Liveness checks đã hoàn thành
+    livenessCompleted: {
+      type: String,
     },
   },
   { timestamps: true },

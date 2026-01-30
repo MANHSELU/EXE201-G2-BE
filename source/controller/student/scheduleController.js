@@ -1,12 +1,13 @@
 const ClassStudent = require("../../model/ClassStudent");
-const LearningSchedule = require("../../model/LearningSchedule");
 const ScheduleSlot = require("../../model/ScheduleSlot");
 const Subject = require("../../model/Subject");
 const ClassModel = require("../../model/Class");
 const Room = require("../../model/Room");
 
-// GET /api/student/schedule/week
-module.exports.getWeeklyLearningSchedule = async (req, res) => {
+// GET /api/student/slots/upcoming
+// Lấy TẤT CẢ lịch học của sinh viên (quá khứ, hiện tại, tương lai)
+// Frontend sẽ tự xử lý hiển thị status dựa trên thời gian
+module.exports.getUpcomingLearningSlots = async (req, res) => {
   try {
     const studentId = req.userId;
 
@@ -14,34 +15,15 @@ module.exports.getWeeklyLearningSchedule = async (req, res) => {
     const classLinks = await ClassStudent.find({ studentId }).select("classId").lean();
     const classIds = classLinks.map((c) => c.classId);
 
-    const schedules = await LearningSchedule.find({ classId: { $in: classIds } })
-      .populate("classId")
-      .populate("subjectId")
-      .lean();
-
-    return res.json({ data: schedules });
-  } catch (err) {
-    return res.status(500).json({ message: "Internal server error" });
-  }
-};
-
-// GET /api/student/slots/upcoming
-module.exports.getUpcomingLearningSlots = async (req, res) => {
-  try {
-    const studentId = req.userId;
-    const now = new Date();
-
-    const classLinks = await ClassStudent.find({ studentId }).select("classId").lean();
-    const classIds = classLinks.map((c) => c.classId);
-
+    // Lấy tất cả slots của các lớp sinh viên, không filter theo ngày
     const slots = await ScheduleSlot.find({
       classId: { $in: classIds },
-      date: { $gte: now },
     })
       .sort({ date: 1, startTime: 1 })
       .populate("subjectId")
       .populate("classId")
       .populate("roomId")
+      .populate("teacherId", "fullName email") // Thêm thông tin giáo viên
       .lean();
 
     return res.json({ data: slots });
