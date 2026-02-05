@@ -4,6 +4,7 @@ const AttendanceRecord = require("../../model/AttendanceRecord");
 const CheatingReport = require("../../model/CheatingReport");
 const ScheduleSlot = require("../../model/ScheduleSlot");
 const ClassStudent = require("../../model/ClassStudent");
+const Semester = require("../../model/Semester");
 
 const hashCode = (code) => {
   return crypto.createHash("sha256").update(code).digest("hex");
@@ -141,6 +142,7 @@ module.exports.getMyAttendanceRecords = async (req, res) => {
       .populate({
         path: "slotId",
         populate: [
+          { path: "semesterId", select: "name startDate endDate" },
           { path: "subjectId", select: "name code" },
           { path: "classId", select: "name" },
           { path: "roomId", select: "name" },
@@ -151,6 +153,101 @@ module.exports.getMyAttendanceRecords = async (req, res) => {
 
     return res.json({ data: records });
   } catch (err) {
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// GET /api/student/attendance/report-by-semester?semesterId=xxx
+// Chỉ tính các slot đã có phiên điểm danh (GV tạo). Mỗi buổi: đi học = 1/1, vắng = 0/1. Trả thêm ngày bắt đầu/kết thúc học từng môn.
+module.exports.getReportBySemester = async (req, res) => {
+  try {
+    const studentId = req.userId;
+    const { semesterId } = req.query;
+    if (!semesterId) return res.status(400).json({ message: "Thiếu semesterId" });
+
+    const semester = await Semester.findById(semesterId).lean();
+    if (!semester) return res.status(404).json({ message: "Không tìm thấy kì học" });
+
+    const classLinks = await ClassStudent.find({ studentId }).select("classId").lean();
+    const classIds = classLinks.map((c) => c.classId);
+
+    const slots = await ScheduleSlot.find({
+      semesterId,
+      classId: { $in: classIds },
+    })
+      .populate("subjectId", "code name")
+      .lean();
+
+    const slotIds = slots.map((s) => s._id);
+    const slotsWithSession = await AttendanceSession.distinct("slotId", { slotId: { $in: slotIds } });
+    const slotHasSessionSet = new Set(slotsWithSession.map((id) => id.toString()));
+
+    const bySubjectMap = {};
+    for (const slot of slots) {
+      const sid = slot.subjectId?._id?.toString() || "unknown";
+      if (!bySubjectMap[sid]) {
+        bySubjectMap[sid] = {
+          subjectId: slot.subjectId?._id,
+          subjectCode: slot.subjectId?.code || "N/A",
+          subjectName: slot.subjectId?.name || "N/A",
+          totalSlotsInSemester: 0,
+          takenSlotIds: [],
+          allSlotDates: [],
+        };
+      }
+      bySubjectMap[sid].totalSlotsInSemester += 1;
+      if (slot.date) bySubjectMap[sid].allSlotDates.push(new Date(slot.date));
+      if (slotHasSessionSet.has(slot._id.toString())) {
+        bySubjectMap[sid].takenSlotIds.push(slot._id);
+      }
+    }
+
+    const records = await AttendanceRecord.find({
+      studentId,
+      slotId: { $in: slotIds },
+    }).lean();
+
+    // Trả về tất cả môn sinh viên có trong kì (từ DB ScheduleSlot), không chỉ môn đã có phiên điểm danh
+    const bySubject = Object.values(bySubjectMap).map((sub) => {
+      const takenSlots = sub.takenSlotIds.length;
+      const allowedAbsent = takenSlots > 0 ? Math.max(1, Math.ceil(takenSlots * 0.2)) : 0;
+      let presentCount = 0;
+      let absentCount = 0;
+      let lateCount = 0;
+      for (const r of records) {
+        if (!sub.takenSlotIds.some((id) => id.toString() === r.slotId.toString())) continue;
+        if (r.status === "PRESENT") presentCount += 1;
+        else if (r.status === "LATE") {
+          lateCount += 1;
+          presentCount += 1;
+        } else if (r.status === "ABSENT" || r.status === "INVALID_LOCATION") absentCount += 1;
+      }
+      const dates = sub.allSlotDates.length ? sub.allSlotDates : [];
+      const firstDate = dates.length ? new Date(Math.min(...dates.map((d) => d.getTime()))) : null;
+      const lastDate = dates.length ? new Date(Math.max(...dates.map((d) => d.getTime()))) : null;
+      return {
+        subjectId: sub.subjectId,
+        subjectCode: sub.subjectCode,
+        subjectName: sub.subjectName,
+        totalSlotsInSemester: sub.totalSlotsInSemester,
+        takenSlots,
+        presentCount,
+        absentCount,
+        lateCount,
+        allowedAbsent,
+        firstDate: firstDate || null,
+        lastDate: lastDate || null,
+      };
+    });
+
+    return res.json({
+      data: {
+        semester: { _id: semester._id, name: semester.name, startDate: semester.startDate, endDate: semester.endDate },
+        bySubject,
+      },
+    });
+  } catch (err) {
+    console.error("[getReportBySemester]", err);
     return res.status(500).json({ message: "Internal server error" });
   }
 };

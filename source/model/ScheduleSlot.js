@@ -1,8 +1,13 @@
 const mongoose = require("mongoose");
 
-// 1 buổi học cụ thể (gắn với ngày, phòng, giảng viên)
+// 1 buổi học cụ thể (gắn với kì, ngày, phòng, giảng viên)
 const scheduleSlotSchema = new mongoose.Schema(
   {
+    semesterId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Semester",
+      required: false,
+    },
     subjectId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Subject",

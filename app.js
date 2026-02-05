@@ -6,6 +6,7 @@ const app = express();
 const loginRoutes = require("./source/routes/common/loginRoutes");
 const lecturerRoutes = require("./source/routes/lectuer/index.check.routes");
 const studentRoutes = require("./source/routes/student/index.check.routes");
+const adminRoutes = require("./source/routes/admin/index.check.routes");
 
 // CORS configuration - cho phép FE kết nối
 const allowedOrigins = [
@@ -51,6 +52,7 @@ app.get("/health", (req, res) => {
 app.use("/api", loginRoutes);
 app.use("/api/lecturer", lecturerRoutes);
 app.use("/api/student", studentRoutes);
+app.use("/api/admin", adminRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
