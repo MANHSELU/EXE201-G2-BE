@@ -8,7 +8,6 @@ require("dotenv").config();
 
 // Import models
 const ScheduleSlot = require("../model/ScheduleSlot");
-const Semester = require("../model/Semester");
 const Subject = require("../model/Subject");
 const ClassModel = require("../model/Class");
 const Room = require("../model/Room");
@@ -31,26 +30,21 @@ const connectDB = async () => {
 
 // Tạo dữ liệu mẫu
 const seedData = async () => {
-  const today = new Date();
   try {
     console.log("\n🔄 Bắt đầu tạo dữ liệu mẫu...\n");
 
     // ========== 0. TẠO ROLES ==========
     console.log("🔐 Tạo roles...");
-    let adminRole = await Role.findOne({ name: "ADMIN" });
     let lecturerRole = await Role.findOne({ name: "LECTURER" });
     let studentRole = await Role.findOne({ name: "STUDENT" });
     
-    if (!adminRole) {
-      adminRole = await Role.create({ name: "ADMIN", description: "Quản trị viên" });
-    }
     if (!lecturerRole) {
       lecturerRole = await Role.create({ name: "LECTURER", description: "Giảng viên" });
     }
     if (!studentRole) {
       studentRole = await Role.create({ name: "STUDENT", description: "Sinh viên" });
     }
-    console.log(`   → Roles: ADMIN, LECTURER, STUDENT`);
+    console.log(`   → Roles: LECTURER, STUDENT`);
 
     // ========== 1. TẠO SUBJECTS ==========
     console.log("📚 Tạo môn học...");
@@ -122,20 +116,6 @@ const seedData = async () => {
       console.log(`   → Đã tạo ${newStudents.length} sinh viên mẫu`);
     }
 
-    // ========== 4b. TẠO ADMIN USER ==========
-    const bcrypt = require("bcryptjs");
-    const hashedPassword = await bcrypt.hash("123456", 10);
-    let adminUser = await User.findOne({ roleId: adminRole._id });
-    if (!adminUser) {
-      adminUser = await User.create({
-        email: "admin@school.edu",
-        password: hashedPassword,
-        fullName: "Quản trị viên",
-        roleId: adminRole._id,
-      });
-      console.log("   → Đã tạo tài khoản admin: admin@school.edu / 123456");
-    }
-
     // ========== 5. GÁN SINH VIÊN VÀO LỚP ==========
     console.log("📋 Gán sinh viên vào lớp...");
     const classStudentData = [];
@@ -150,22 +130,6 @@ const seedData = async () => {
     await ClassStudent.insertMany(classStudentData).catch(() => {});
     console.log(`   → Đã gán ${classStudentData.length} sinh viên`);
 
-    // ========== 5b. TẠO KÌ HỌC ==========
-    console.log("📆 Tạo kì học...");
-    const semesterStart = new Date(today);
-    semesterStart.setDate(today.getDate() - 14);
-    const semesterEnd = new Date(today);
-    semesterEnd.setDate(today.getDate() + 30);
-    let defaultSemester = await Semester.findOne({ name: "Kì 1 2024" });
-    if (!defaultSemester) {
-      defaultSemester = await Semester.create({
-        name: "Kì 1 2024",
-        startDate: semesterStart,
-        endDate: semesterEnd,
-      });
-      console.log("   → Đã tạo kì học: Kì 1 2024");
-    }
-
     // ========== 6. TẠO SCHEDULE SLOTS ==========
     console.log("📅 Tạo lịch học (ScheduleSlot)...");
     
@@ -173,6 +137,7 @@ const seedData = async () => {
     await ScheduleSlot.deleteMany({});
     
     const slots = [];
+    const today = new Date();
     
     // Tạo slots cho 2 tuần (quá khứ và tương lai)
     for (let dayOffset = -7; dayOffset <= 14; dayOffset++) {
@@ -200,7 +165,6 @@ const seedData = async () => {
         const lecturerIndex = idx % lecturers.length;
 
         slots.push({
-          semesterId: defaultSemester._id,
           subjectId: subjects[subjectIndex < 0 ? 0 : subjectIndex]._id,
           classId: classes[classIndex]._id,
           roomId: rooms[roomIndex < 0 ? 0 : roomIndex]._id,

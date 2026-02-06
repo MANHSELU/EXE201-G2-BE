@@ -5,14 +5,12 @@ const networkCheck = require("../../middleware/networkCheck");
 
 const {
   getUpcomingLearningSlots,
-  getSemesters,
 } = require("../../controller/student/scheduleController");
 const { 
   verifyCode,
   checkinWithFace,
   getMyAttendanceRecords,
   getSlotAttendanceStatus,
-  getReportBySemester,
 } = require("../../controller/student/attendanceController");
 const {
   registerFace,
@@ -23,12 +21,15 @@ const {
   verifyFaceImage,
   faceServiceHealth,
 } = require("../../controller/student/faceController");
+const {
+  getSemesters,
+  getReportBySemester,
+} = require("../../controller/student/semesterController");
 
 // role sinh viên, ví dụ "STUDENT"
 const requireStudent = authMiddleware(["STUDENT"]);
 
 router.get("/slots/upcoming", requireStudent, getUpcomingLearningSlots);
-router.get("/semesters", requireStudent, getSemesters);
 
 // Face Registration APIs
 router.post("/face/register", requireStudent, registerFace);
@@ -40,9 +41,12 @@ router.get("/face/health", requireStudent, faceServiceHealth);
 router.post("/face/detect", requireStudent, detectFaceImage);
 router.post("/face/verify-image", requireStudent, verifyFaceImage);
 
+// Semester APIs
+router.get("/semesters", requireStudent, getSemesters);
+router.get("/attendance/report-by-semester", requireStudent, getReportBySemester);
+
 // Attendance APIs
 router.get("/attendance/my-records", requireStudent, getMyAttendanceRecords);
-router.get("/attendance/report-by-semester", requireStudent, getReportBySemester);
 router.get("/attendance/slot/:slotId", requireStudent, getSlotAttendanceStatus);
 
 // Bước 1: Xác thực mã OTP

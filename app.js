@@ -6,7 +6,7 @@ const app = express();
 const loginRoutes = require("./source/routes/common/loginRoutes");
 const lecturerRoutes = require("./source/routes/lectuer/index.check.routes");
 const studentRoutes = require("./source/routes/student/index.check.routes");
-const adminRoutes = require("./source/routes/admin/index.check.routes");
+const adminRoutes = require("./source/routes/admin/admin.routes");
 
 // CORS configuration - cho phép FE kết nối
 const allowedOrigins = [

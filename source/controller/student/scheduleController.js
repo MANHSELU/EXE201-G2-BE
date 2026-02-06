@@ -1,6 +1,5 @@
 const ClassStudent = require("../../model/ClassStudent");
 const ScheduleSlot = require("../../model/ScheduleSlot");
-const Semester = require("../../model/Semester");
 const Subject = require("../../model/Subject");
 const ClassModel = require("../../model/Class");
 const Room = require("../../model/Room");
@@ -32,24 +31,3 @@ module.exports.getUpcomingLearningSlots = async (req, res) => {
     return res.status(500).json({ message: "Internal server error" });
   }
 };
-
-// GET /api/student/semesters
-// Lấy danh sách kì học mà sinh viên có lịch (có ít nhất 1 slot thuộc lớp của SV)
-module.exports.getSemesters = async (req, res) => {
-  try {
-    const studentId = req.userId;
-    const classLinks = await ClassStudent.find({ studentId }).select("classId").lean();
-    const classIds = classLinks.map((c) => c.classId).filter(Boolean);
-    if (classIds.length === 0) return res.json({ data: [] });
-    let slotSemesterIds = await ScheduleSlot.distinct("semesterId", { classId: { $in: classIds } });
-    if (!Array.isArray(slotSemesterIds)) slotSemesterIds = [];
-    slotSemesterIds = slotSemesterIds.filter(Boolean);
-    if (slotSemesterIds.length === 0) return res.json({ data: [] });
-    const semesters = await Semester.find({ _id: { $in: slotSemesterIds } }).sort({ startDate: -1 }).lean();
-    return res.json({ data: semesters || [] });
-  } catch (err) {
-    console.error("[getSemesters]", err);
-    return res.status(500).json({ message: "Internal server error" });
-  }
-};
-
