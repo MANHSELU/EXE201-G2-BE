@@ -1,8 +1,11 @@
 const express = require("express");
 require("dotenv").config();
 const cors = require("cors");
+const http = require("http");
+const { Server } = require("socket.io");
 const connectDB = require("./source/config/database");
 const app = express();
+const server = http.createServer(app);
 const loginRoutes = require("./source/routes/common/loginRoutes");
 const lecturerRoutes = require("./source/routes/lectuer/index.check.routes");
 const studentRoutes = require("./source/routes/student/index.check.routes");
@@ -32,6 +35,9 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Serve static files (for uploaded proof images)
+app.use('/uploads', express.static('uploads'));
+
 // Connect to Database
 connectDB();
 
@@ -54,6 +60,40 @@ app.use("/api/lecturer", lecturerRoutes);
 app.use("/api/student", studentRoutes);
 app.use("/api/admin", adminRoutes);
 
+// Socket.IO
+const io = new Server(server, {
+  cors: {
+    origin: function(origin, callback) {
+      if (!origin || allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
+        callback(null, true);
+      } else {
+        callback(null, true);
+      }
+    },
+    credentials: true,
+  },
+});
+
+// Track online users: userId -> socketId
+const onlineUsers = new Map();
+
+io.on("connection", (socket) => {
+  socket.on("register", (userId) => {
+    if (userId) {
+      onlineUsers.set(userId, socket.id);
+      socket.userId = userId;
+    }
+  });
+
+  socket.on("disconnect", () => {
+    if (socket.userId) onlineUsers.delete(socket.userId);
+  });
+});
+
+// Make io accessible in controllers
+app.set("io", io);
+app.set("onlineUsers", onlineUsers);
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
@@ -61,6 +101,6 @@ app.use((err, req, res, next) => {
 });
 
 const port = process.env.PORT || 3000;
-app.listen(port, "0.0.0.0", () => {
+server.listen(port, "0.0.0.0", () => {
   console.log(`Server is running on port ${port}`);
 });

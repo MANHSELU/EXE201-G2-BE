@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const jwt = require("jsonwebtoken");
 const AttendanceSession = require("../../model/AttendanceSession");
 const AttendanceRecord = require("../../model/AttendanceRecord");
 const CheatingReport = require("../../model/CheatingReport");
@@ -11,7 +12,8 @@ const hashCode = (code) => {
 
 // ============ CẤU HÌNH ============
 // Đặt DEV_MODE = true để bỏ qua kiểm tra vị trí khi test
-const DEV_MODE = true;
+const DEV_MODE = (process.env.DEV_MODE || "false") === "true";
+const ENFORCE_LIVENESS = (process.env.ENFORCE_LIVENESS || "true") === "true";
 
 // Cấu hình vị trí trường (có thể chuyển vào config/database sau)
 const SCHOOL_LOCATION = {
@@ -34,6 +36,17 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
       Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
+};
+
+const verifyLivenessToken = (token, studentId) => {
+  if (!token) return false;
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded?.type !== "LIVENESS") return false;
+    return String(decoded.sub) === String(studentId);
+  } catch {
+    return false;
+  }
 };
 
 // POST /api/student/attendance/verify-code
@@ -198,16 +211,20 @@ module.exports.getSlotAttendanceStatus = async (req, res) => {
 // Bước cuối: Check-in với face recognition
 module.exports.checkinWithFace = async (req, res) => {
   try {
-    const { 
-      slotId, 
-      attendanceSessionId, 
-      sessionId, 
-      code, 
+    const {
+      slotId,
+      attendanceSessionId,
+      sessionId,
+      code,
       faceImage,
-      faceImageUrl, 
+      faceImageUrl,
       faceConfidence,
+      faceVerified,
+      faceMatchRate,
       location,
-      livenessCompleted 
+      livenessCompleted,
+      livenessToken,
+      antiSpoofing
     } = req.body;
     
     const studentId = req.userId;
@@ -252,26 +269,50 @@ module.exports.checkinWithFace = async (req, res) => {
     }
 
     // Kiểm tra liveness (nếu có) - Bỏ qua nếu DEV_MODE = true
-    const livenessValid = DEV_MODE || (livenessCompleted && livenessCompleted.length >= 3);
+    const livenessValid =
+      DEV_MODE || !ENFORCE_LIVENESS || verifyLivenessToken(livenessToken, studentId);
 
-    // TODO: Tích hợp Face Recognition thực tế
-    // Hiện tại giả lập: nếu có faceImage và đã pass liveness thì cho pass
+    if (!livenessValid) {
+      return res.status(400).json({ success: false, message: "Chưa xác thực liveness" });
+    }
+
+    // Face matching: sử dụng kết quả từ client-side face-api.js
     let faceMatchScore = 0;
     let isCheating = false;
 
     if (faceImage) {
-      // Giả lập face matching score
-      // Trong thực tế sẽ gọi AI service để so sánh với ảnh đã lưu
-      faceMatchScore = livenessValid ? 0.95 : 0.3;
-      
-      // TODO: Anti-spoofing detection
-      // Kiểm tra xem có phải ảnh từ màn hình/ảnh in không
-      // isCheating = detectSpoofing(faceImage);
+      // Sử dụng face match rate từ client (đã verify qua 15 frames với stored descriptors)
+      faceMatchScore = faceVerified && faceMatchRate ? faceMatchRate : 0;
+
+      // Anti-spoofing detection từ client-side analysis
+      if (antiSpoofing) {
+        if (!antiSpoofing.passed) {
+          isCheating = true;
+          console.log(`[AntiSpoof] DETECTED for student ${studentId}:`, {
+            reasons: antiSpoofing.reasons,
+            scores: antiSpoofing.scores,
+          });
+        } else {
+          // Server-side validation: kiểm tra scores hợp lý
+          const scores = antiSpoofing.scores || {};
+          const suspiciousCount = [
+            scores.movementVariance < 0.8,    // Quá ít chuyển động
+            scores.frameSimilarity > 0.97,    // Frames quá giống nhau
+            scores.brightnessVariance < 0.8,  // Ánh sáng quá ổn định
+            scores.highFreqEnergy > 10,       // Moiré pattern
+          ].filter(Boolean).length;
+
+          if (suspiciousCount >= 2) {
+            isCheating = true;
+            console.log(`[AntiSpoof] Server-side DETECTED for student ${studentId}: ${suspiciousCount} suspicious indicators`);
+          }
+        }
+      }
     }
 
     // Xác định trạng thái điểm danh
     let status = "ABSENT";
-    if (faceMatchScore >= 0.8 && locationValid && livenessValid) {
+    if (faceMatchScore >= 0.6 && locationValid && livenessValid) {
       status = "PRESENT";
     } else if (!locationValid) {
       status = "INVALID_LOCATION";
@@ -286,7 +327,7 @@ module.exports.checkinWithFace = async (req, res) => {
           sessionId: resolvedSessionId,
           type: "SPOOFING_DETECTED",
           evidence: faceImage ? faceImage.substring(0, 500) : null,
-          description: "Phát hiện nghi ngờ sử dụng ảnh/video để điểm danh",
+          description: `Phát hiện gian lận: ${antiSpoofing?.reasons?.join(", ") || "Dấu hiệu bất thường"}. Scores: movement=${antiSpoofing?.scores?.movementVariance?.toFixed(2)}, similarity=${antiSpoofing?.scores?.frameSimilarity?.toFixed(4)}, brightness=${antiSpoofing?.scores?.brightnessVariance?.toFixed(2)}, hfEnergy=${antiSpoofing?.scores?.highFreqEnergy?.toFixed(2)}`,
           createdAt: new Date(),
         });
       } catch (reportErr) {
@@ -296,7 +337,7 @@ module.exports.checkinWithFace = async (req, res) => {
       return res.status(400).json({
         success: false,
         cheatingDetected: true,
-        message: "Phát hiện hành vi gian lận. Báo cáo đã được gửi đến Admin.",
+        message: "Phát hiện hành vi gian lận! Hệ thống đã ghi nhận. Vui lòng sử dụng khuôn mặt thật để điểm danh.",
       });
     }
 
@@ -329,4 +370,3 @@ module.exports.checkinWithFace = async (req, res) => {
     return res.status(500).json({ message: "Internal server error" });
   }
 };
-

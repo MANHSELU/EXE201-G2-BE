@@ -1,70 +1,26 @@
 const FaceData = require("../../model/FaceData");
+const crypto = require("crypto");
+const jwt = require("jsonwebtoken");
 
-const FACE_SERVICE_URL = process.env.FACE_SERVICE_URL || "http://localhost:8001";
+const LIVENESS_TTL_MS = 90 * 1000;
+const LIVENESS_TOKEN_TTL = "5m";
+const LIVENESS_CHALLENGES = [
+  "TURN_LEFT",
+  "TURN_RIGHT",
+  "LOOK_UP",
+  "LOOK_DOWN",
+  "OPEN_MOUTH",
+];
 
-// Proxy: GET /api/student/face/health -> Face Service /health
-module.exports.faceServiceHealth = async (req, res) => {
-  try {
-    const response = await fetch(`${FACE_SERVICE_URL}/health`);
-    const data = await response.json();
-    return res.status(200).json(data);
-  } catch (err) {
-    console.error("[FaceData] Health proxy error:", err);
-    return res.status(502).json({
-      status: "unhealthy",
-      message: "Face Service không phản hồi",
-    });
+const livenessSessions = new Map();
+
+const pickRandomChallenges = (count = 4) => {
+  const copy = [...LIVENESS_CHALLENGES];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
   }
-};
-
-// Proxy: POST /api/student/face/detect -> Face Service /detect (qua BE để có auth)
-module.exports.detectFaceImage = async (req, res) => {
-  try {
-    const { image } = req.body;
-    if (!image) {
-      return res.status(400).json({ success: false, message: "Thiếu ảnh", detected: false });
-    }
-    const response = await fetch(`${FACE_SERVICE_URL}/detect`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image }),
-    });
-    const data = await response.json();
-    return res.status(200).json(data);
-  } catch (err) {
-    console.error("[FaceData] Detect proxy error:", err);
-    return res.status(502).json({
-      success: false,
-      detected: false,
-      message: "Không kết nối được Face Service. Kiểm tra face-service đã chạy chưa.",
-    });
-  }
-};
-
-// Proxy: POST /api/student/face/verify-image -> Face Service /verify (so sánh qua BE, studentId từ token)
-module.exports.verifyFaceImage = async (req, res) => {
-  try {
-    const studentId = req.userId; // từ token, không cho frontend gửi studentId khác
-    const { image } = req.body;
-    if (!image) {
-      return res.status(400).json({ success: false, matched: false, confidence: 0 });
-    }
-    const response = await fetch(`${FACE_SERVICE_URL}/verify`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ studentId: String(studentId), image }),
-    });
-    const data = await response.json();
-    return res.status(200).json(data);
-  } catch (err) {
-    console.error("[FaceData] Verify-image proxy error:", err);
-    return res.status(502).json({
-      success: false,
-      matched: false,
-      confidence: 0,
-      message: "Không kết nối được Face Service.",
-    });
-  }
+  return copy.slice(0, count);
 };
 
 // POST /api/student/face/register
@@ -303,5 +259,90 @@ module.exports.resetFace = async (req, res) => {
       success: false,
       message: "Lỗi hệ thống",
     });
+  }
+};
+
+// GET /api/student/face/liveness-challenge
+// Tạo challenge ngẫu nhiên + nonce chống replay
+module.exports.getLivenessChallenge = async (req, res) => {
+  try {
+    const studentId = req.userId;
+    const nonce = crypto.randomBytes(16).toString("hex");
+    const challenges = pickRandomChallenges(3);
+
+    livenessSessions.set(nonce, {
+      studentId: String(studentId),
+      challenges,
+      createdAt: Date.now(),
+      used: false,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        nonce,
+        challenges,
+        expiresInMs: LIVENESS_TTL_MS,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "Lỗi hệ thống" });
+  }
+};
+
+// POST /api/student/face/liveness-verify
+// Xác nhận liveness + cấp livenessToken
+module.exports.verifyLiveness = async (req, res) => {
+  try {
+    const studentId = String(req.userId);
+    const { nonce, results, durationMs } = req.body || {};
+
+    if (!nonce || !results) {
+      return res.status(400).json({ success: false, message: "Thiếu dữ liệu liveness" });
+    }
+
+    const session = livenessSessions.get(nonce);
+    if (!session) {
+      return res.status(400).json({ success: false, message: "Nonce không hợp lệ" });
+    }
+
+    if (session.used) {
+      livenessSessions.delete(nonce);
+      return res.status(400).json({ success: false, message: "Nonce đã được sử dụng" });
+    }
+
+    if (session.studentId !== studentId) {
+      return res.status(403).json({ success: false, message: "Không đúng user" });
+    }
+
+    if (Date.now() - session.createdAt > LIVENESS_TTL_MS) {
+      livenessSessions.delete(nonce);
+      return res.status(400).json({ success: false, message: "Challenge đã hết hạn" });
+    }
+
+    const allPassed = session.challenges.every((c) => results?.[c]?.pass === true);
+    if (!allPassed) {
+      return res.status(400).json({ success: false, message: "Liveness chưa đạt" });
+    }
+
+    livenessSessions.delete(nonce);
+
+    const token = jwt.sign(
+      {
+        sub: studentId,
+        type: "LIVENESS",
+        nonce,
+        durationMs: durationMs || null,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: LIVENESS_TOKEN_TTL, algorithm: "HS256" }
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: { livenessToken: token },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "Lỗi hệ thống" });
   }
 };
