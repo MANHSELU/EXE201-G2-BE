@@ -1,4 +1,5 @@
 const ScheduleSlot = require("../../model/ScheduleSlot");
+const AttendanceSession = require("../../model/AttendanceSession");
 const Subject = require("../../model/Subject");
 const ClassModel = require("../../model/Class");
 const Room = require("../../model/Room");
@@ -10,7 +11,6 @@ module.exports.getUpcomingTeachingSlots = async (req, res) => {
   try {
     const teacherId = req.userId;
 
-    // Lấy tất cả slots của giáo viên, không filter theo ngày
     const slots = await ScheduleSlot.find({ teacherId })
       .sort({ date: 1, startTime: 1 })
       .populate("subjectId")
@@ -18,7 +18,17 @@ module.exports.getUpcomingTeachingSlots = async (req, res) => {
       .populate("roomId")
       .lean();
 
-    return res.json({ data: slots });
+    // Check xem slot nào đã tạo mã điểm danh
+    const slotIds = slots.map((s) => s._id);
+    const sessions = await AttendanceSession.find({ slotId: { $in: slotIds }, teacherId }).lean();
+    const sessionMap = new Set(sessions.map((s) => s.slotId.toString()));
+
+    const result = slots.map((s) => ({
+      ...s,
+      hasAttendanceSession: sessionMap.has(s._id.toString()),
+    }));
+
+    return res.json({ data: result });
   } catch (err) {
     return res.status(500).json({ message: "Internal server error" });
   }

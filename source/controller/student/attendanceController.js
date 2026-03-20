@@ -312,7 +312,7 @@ module.exports.checkinWithFace = async (req, res) => {
 
     // Xác định trạng thái điểm danh
     let status = "ABSENT";
-    if (faceMatchScore >= 0.6 && locationValid && livenessValid) {
+    if (faceMatchScore >= 0.75 && locationValid && livenessValid) {
       status = "PRESENT";
     } else if (!locationValid) {
       status = "INVALID_LOCATION";

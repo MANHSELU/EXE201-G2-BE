@@ -415,10 +415,16 @@ module.exports.getSlots = async (req, res) => {
   try {
     const { semesterId, showPast } = req.query;
     const query = semesterId ? { semesterId } : {};
-    // Mặc định chỉ lấy từ hôm nay trở đi, trừ khi showPast=true
-    if (showPast !== "true") {
-      const today = new Date(); today.setHours(0, 0, 0, 0);
-      query.date = { $gte: today };
+    // Lọc theo thời gian (VN UTC+7)
+    const nowVN = new Date(Date.now() + 7 * 60 * 60 * 1000);
+    const todayStr = nowVN.toISOString().split("T")[0];
+    const todayDate = new Date(todayStr + "T00:00:00.000Z");
+    if (showPast === "true") {
+      // Chỉ lấy slot đã kết thúc (trước hôm nay)
+      query.date = { $lt: todayDate };
+    } else {
+      // Mặc định: từ hôm nay trở đi
+      query.date = { $gte: todayDate };
     }
     const list = await ScheduleSlot.find(query)
       .populate("semesterId", "name")

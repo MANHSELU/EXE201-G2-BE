@@ -48,16 +48,33 @@ module.exports.getReportSessions = async (req, res) => {
       return res.status(400).json({ message: "Thiếu classId" });
     }
 
-    // Tìm tất cả slots của GV với lớp này
+    // Chỉ lấy slots đã qua (ngày < hôm nay) hoặc hôm nay đã qua giờ kết thúc
     const filter = { teacherId, classId };
     if (subjectId) filter.subjectId = subjectId;
 
-    const slots = await ScheduleSlot.find(filter)
+    const allSlots = await ScheduleSlot.find(filter)
       .populate("roomId", "name")
       .populate("subjectId", "code name")
       .populate("classId", "name")
       .sort({ date: -1 })
       .lean();
+
+    // Lấy ngày/giờ hiện tại theo VN (UTC+7)
+    const nowVN = new Date(Date.now() + 7 * 60 * 60 * 1000);
+    const todayStr = nowVN.toISOString().split("T")[0]; // "YYYY-MM-DD"
+    const nowMinutes = nowVN.getUTCHours() * 60 + nowVN.getUTCMinutes();
+
+    // Chỉ giữ slot đã qua hoặc đã điểm danh
+    const slots = allSlots.filter((s) => {
+      const slotStr = new Date(s.date).toISOString().split("T")[0];
+      if (slotStr < todayStr) return true; // ngày trước hôm nay
+      if (slotStr === todayStr) {
+        // Hôm nay: chỉ hiện nếu đã qua giờ kết thúc
+        const [h, m] = (s.endTime || "00:00").split(":").map(Number);
+        return nowMinutes >= h * 60 + m;
+      }
+      return false; // tương lai → ẩn
+    });
 
     // Lấy tổng SV trong lớp
     const totalStudents = await ClassStudent.countDocuments({ classId });
@@ -94,6 +111,7 @@ module.exports.getReportSessions = async (req, res) => {
         absentCount,
         lateCount,
         hasAttendance: !!session,
+        statusLabel: session ? "Đã điểm danh" : "Chưa điểm danh",
       });
     }
 
