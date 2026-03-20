@@ -23,7 +23,8 @@ const createPost = async (req, res) => {
   try {
     const { content } = req.body;
     if (!content || !content.trim()) return res.status(400).json({ message: "Nội dung không được để trống" });
-    const images = req.files ? req.files.map((f) => `/uploads/post-images/${f.filename}`) : [];
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const images = req.files ? req.files.map((f) => `${baseUrl}/uploads/post-images/${f.filename}`) : [];
     const post = await Post.create({ authorId: req.userId, content: content.trim(), images });
     res.status(201).json({ message: "Bài viết đã gửi, chờ duyệt", data: post });
   } catch (err) {
@@ -86,7 +87,8 @@ const addComment = async (req, res) => {
     const post = await Post.findById(req.params.id);
     if (!post || post.status !== "APPROVED") return res.status(404).json({ message: "Không tìm thấy bài viết" });
     const { content, parentCommentId, replyToName } = req.body;
-    const commentImages = req.files ? req.files.map((f) => `/uploads/post-images/${f.filename}`) : [];
+    const baseUrl = `${req.protocol}://${req.get("host")}`;
+    const commentImages = req.files ? req.files.map((f) => `${baseUrl}/uploads/post-images/${f.filename}`) : [];
     if ((!content || !content.trim()) && commentImages.length === 0) return res.status(400).json({ message: "Nội dung bình luận không được để trống" });
     post.comments.push({
       authorId: req.userId,
