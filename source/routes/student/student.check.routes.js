@@ -33,29 +33,9 @@ const {
   cancelLeaveRequest,
 } = require("../../controller/student/leaveRequestController");
 
-// Cấu hình multer cho upload ảnh bằng chứng
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads/proof-images/");
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, file.fieldname + "-" + uniqueSuffix + "-" + file.originalname);
-  },
-});
-
-const upload = multer({
-  storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only image files are allowed"), false);
-    }
-  },
-});
+// Cấu hình multer cho upload ảnh bằng chứng (Cloudinary)
+const { proofImageStorage } = require("../../config/cloudinary");
+const upload = multer({ storage: proofImageStorage, limits: { fileSize: 5 * 1024 * 1024 } });
 
 // role sinh viên, ví dụ "STUDENT"
 const requireStudent = authMiddleware(["STUDENT"]);
@@ -87,14 +67,8 @@ router.post("/attendance/checkin", requireStudent, networkCheck, checkinWithFace
 
 // Post / Feed APIs
 const { getFeed, createPost, deletePost, toggleLike, addComment, toggleCommentLike, getMyPosts } = require("../../controller/post/postController");
-const postStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "uploads/post-images/"),
-  filename: (req, file, cb) => cb(null, Date.now() + "-" + Math.round(Math.random() * 1e9) + "-" + file.originalname),
-});
-const postUpload = multer({ storage: postStorage, limits: { fileSize: 5 * 1024 * 1024 }, fileFilter: (req, file, cb) => {
-  if (["image/jpeg", "image/png", "image/gif", "image/webp"].includes(file.mimetype)) cb(null, true);
-  else cb(new Error("Only image files are allowed"), false);
-}});
+const { postImageStorage } = require("../../config/cloudinary");
+const postUpload = multer({ storage: postImageStorage, limits: { fileSize: 5 * 1024 * 1024 } });
 router.get("/feed", requireStudent, getFeed);
 router.get("/feed/my-posts", requireStudent, getMyPosts);
 router.post("/feed/posts", requireStudent, postUpload.array("images", 5), createPost);

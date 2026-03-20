@@ -30,14 +30,8 @@ router.get("/attendance/recent", requireLecturer, getRecentAttendanceSessions);
 // Post / Feed APIs
 const multer = require("multer");
 const { getFeed, createPost, deletePost, toggleLike, addComment, toggleCommentLike, getMyPosts } = require("../../controller/post/postController");
-const postStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "uploads/post-images/"),
-  filename: (req, file, cb) => cb(null, Date.now() + "-" + Math.round(Math.random() * 1e9) + "-" + file.originalname),
-});
-const postUpload = multer({ storage: postStorage, limits: { fileSize: 5 * 1024 * 1024 }, fileFilter: (req, file, cb) => {
-  if (["image/jpeg", "image/png", "image/gif", "image/webp"].includes(file.mimetype)) cb(null, true);
-  else cb(new Error("Only image files are allowed"), false);
-}});
+const { postImageStorage } = require("../../config/cloudinary");
+const postUpload = multer({ storage: postImageStorage, limits: { fileSize: 5 * 1024 * 1024 } });
 router.get("/feed", requireLecturer, getFeed);
 router.get("/feed/my-posts", requireLecturer, getMyPosts);
 router.post("/feed/posts", requireLecturer, postUpload.array("images", 5), createPost);
