@@ -413,15 +413,20 @@ module.exports.deleteRoom = async (req, res) => {
 
 module.exports.getSlots = async (req, res) => {
   try {
-    const { semesterId } = req.query;
+    const { semesterId, showPast } = req.query;
     const query = semesterId ? { semesterId } : {};
+    // Mặc định chỉ lấy từ hôm nay trở đi, trừ khi showPast=true
+    if (showPast !== "true") {
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      query.date = { $gte: today };
+    }
     const list = await ScheduleSlot.find(query)
       .populate("semesterId", "name")
       .populate("subjectId", "code name")
       .populate("classId", "name")
       .populate("roomId", "name")
       .populate("teacherId", "fullName email")
-      .sort({ date: -1, startTime: 1 })
+      .sort({ date: 1, startTime: 1 })
       .lean();
     return res.json({ data: list });
   } catch (err) {
